@@ -38,6 +38,7 @@ h1{margin:12px 0 4px;font-size:2rem;color:#ff5e8a;text-shadow:2px 2px #fff}
  <div id="stars"></div>
  <div class="row"><button class="big go" id="go">▶️ Go!</button></div>
  <div class="row"><button class="big again" id="again">🔁 Try again</button><button class="big next" id="next">➡️ Next word</button></div>
+ <div class="row"><button class="big" id="hearRight" style="display:none;background:#a855f7">🔊 Hear it right</button><button class="big" id="hearMe" style="display:none;background:#ec4899">🎤 Hear me</button></div>
  <div id="heard"></div>
 </div>
 <script>
@@ -53,8 +54,13 @@ shuffle(WORDS);$("word").textContent=WORDS[0];
 function tg(id,attr,cb){$(id).querySelectorAll("button").forEach(b=>b.onclick=()=>{$(id).querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");cb(b.dataset[attr])})}
 tg("modes","m",v=>mode=v);tg("levels","l",v=>level=v);
 function speak(t){return new Promise(r=>{if(!window.speechSynthesis)return r();speechSynthesis.cancel();let done=false;const fin=()=>{if(done)return;done=true;setTimeout(r,300)};const u=new SpeechSynthesisUtterance(t);u.lang="en-US";u.rate=0.85;u.pitch=1.2;u.onend=fin;u.onerror=fin;setTimeout(()=>speechSynthesis.speak(u),50);setTimeout(fin,6000)})}
-let micP=null;
-function getMic(){if(!micP)micP=(async()=>{try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return true;const st=await navigator.mediaDevices.getUserMedia({audio:true});st.getTracks().forEach(t=>t.stop());return true}catch(e){$("heard").textContent="mic permission error: "+e.name+" "+(e.message||"");micP=null;return false}})();return micP}
+let micP=null,micStream=null,recEnabled=!!window.MediaRecorder,recNote="";
+function getMic(){if(!micP)micP=(async()=>{try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){recEnabled=false;return true}const st=await navigator.mediaDevices.getUserMedia({audio:true});if(recEnabled&&st.getAudioTracks().length){micStream=st}else{st.getTracks().forEach(t=>t.stop())}return true}catch(e){$("heard").textContent="mic permission error: "+e.name+" "+(e.message||"");micP=null;return false}})();return micP}
+function dropMic(){if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null}}
+let mr=null,chunks=[],clipURL=null;
+function clearClip(){if(clipURL){URL.revokeObjectURL(clipURL);clipURL=null}$("hearMe").style.display="none";$("hearRight").style.display="none"}
+function startRec(){chunks=[];mr=null;if(!recEnabled||!micStream||micStream.getAudioTracks().every(t=>t.readyState!=="live"))return;try{const mt=["audio/mp4","audio/webm;codecs=opus","audio/webm"].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t));mr=mt?new MediaRecorder(micStream,{mimeType:mt}):new MediaRecorder(micStream);mr.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};mr.start()}catch(e){recNote="recording unavailable: "+e.message;mr=null}}
+function stopRec(){return new Promise(res=>{if(!mr||mr.state==="inactive")return res(null);const m=mr;mr=null;m.onstop=()=>{m.ondataavailable=m.onstop=null;res(chunks.length?new Blob(chunks,{type:m.mimeType||"audio/mp4"}):null)};try{m.stop()}catch(e){res(null)}setTimeout(()=>res(null),1500)})}
 function lev(a,b){const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]==b[j-1]?0:1));return d[a.length][b.length]}
 function soundex(s){s=s.toUpperCase().replace(/[^A-Z]/g,"");if(!s)return"";const c={B:1,F:1,P:1,V:1,C:2,G:2,J:2,K:2,Q:2,S:2,X:2,Z:2,D:3,T:3,L:4,M:5,N:5,R:6};let r=s[0],p=c[s[0]]||0;for(let i=1;i<s.length&&r.length<4;i++){const k=c[s[i]]||0;if(k&&k!=p)r+=k;if(s[i]!="H"&&s[i]!="W")p=k}return(r+"000").slice(0,4)}
 function sim(t,h){h=h.toLowerCase().replace(/[^a-z ]/g,"").trim();if(!h)return 0;
@@ -79,22 +85,26 @@ async function listenOnce(){await Promise.race([curEnded,new Promise(r=>setTimeo
  try{r.start()}catch(e){err="start failed: "+e.message;killRec(r);curRec=null;endRes();fin()}})}
 function resetAll(){if(curRec){try{curRec.abort()}catch(e){}killRec(curRec);curRec=null}curEnded=Promise.resolve();try{speechSynthesis.cancel()}catch(e){}$("mic").classList.remove("live");$("count").textContent="";busy=false;setBtns(true)}
 function setBtns(on){["go","again","next"].forEach(i=>{$(i).disabled=!on;$(i).style.opacity=on?1:.5})}
-async function listen(){let o=await listenOnce();
+async function listen(){startRec();let o=await listenOnce();
+ if(!o.alts.length&&o.err&&recEnabled&&micStream&&/aborted|audio-capture|not-allowed|service/.test(o.err)){await stopRec();recEnabled=false;dropMic();recNote="recording turned off: it conflicted with speech recognition on this browser";$("heard").textContent="mic error: "+o.err+" — retrying without recording…";const o3=await listenOnce();if(o3.alts.length||!o3.err)return o3.alts;o=o3}
  if(!o.alts.length&&o.err&&/aborted|no-speech/.test(o.err)){$("heard").textContent="mic error: "+o.err+" — retrying…";await new Promise(r=>setTimeout(r,400));const o2=await listenOnce();o2.err=o2.err||null;if(o2.alts.length||!o2.err)return o2.alts;o=o2}
  if(o.err)setTimeout(()=>$("heard").textContent+=" | last error: "+o.err,0);return o.alts}
 const PRAISE=["","Good try! Let's do it again!","Nice effort! You're getting there!","Good job!","Great job! So close!","WOW! You nailed it!"];
 async function round(){if(busy||!SR)return;busy=true;setBtns(false);try{await roundInner()}catch(e){$("heard").textContent+=" | crashed: "+e.message+" — reset";resetAll()}finally{busy=false;setBtns(true)}}
-async function roundInner(){if(!(await getMic()))return;const w=WORDS[idx];$("stars").innerHTML="";$("heard").textContent="";
+async function roundInner(){clearClip();if(!(await getMic()))return;const w=WORDS[idx];$("stars").innerHTML="";$("heard").textContent="";
  $("msg").textContent=mode=="say"?`Say the word "${w}"`:"Can you read this word?";
  await speak(mode=="say"?`Say the word, ${w}`:"Can you read this word?");
- $("msg").textContent="Listening... 👂";const alts=await listen();
+ $("msg").textContent="Listening... 👂";clearClip();const alts=await listen();const blob=await stopRec();if(blob&&blob.size>500){clipURL=URL.createObjectURL(blob);$("hearMe").style.display=""}$("hearRight").style.display="";
  let best=0,bestAlt="";for(const a of alts){const s=sim(w,a);if(s>best){best=s;bestAlt=a}}
- const n=stars(best);$("heard").textContent="I heard: "+(alts.length?[...new Set(alts)].join(" | "):"(nothing)")+` — score ${(best*100|0)}%`;
+ const n=stars(best);$("heard").textContent="I heard: "+(alts.length?[...new Set(alts)].join(" | "):"(nothing)")+` — score ${(best*100|0)}%`+(recNote?" | "+recNote:"");
  $("stars").innerHTML=[1,2,3,4,5].map(i=>`<span>${i<=n?"⭐":"☆"}</span>`).join("");
  $("stars").querySelectorAll("span").forEach((s,i)=>setTimeout(()=>s.classList.add("pop"),i*180));
  const p=alts.length?(PRAISE[n]||"Hmm, that sounded like a different word. Try again!"):"I didn't hear anything. Try again!";
  $("msg").textContent=p;if(n==5)confetti();await speak(p)}
 function confetti(){const col=["#ff5e8a","#ffd700","#22c55e","#3b82f6","#a855f7","#ff8a00"];for(let i=0;i<80;i++){const d=document.createElement("div");d.className="conf";d.style.left=Math.random()*100+"vw";d.style.background=col[i%6];d.style.animationDuration=(1.5+Math.random()*2)+"s";d.style.animationDelay=Math.random()*0.5+"s";document.body.appendChild(d);setTimeout(()=>d.remove(),4500)}}
 $("go").onclick=round;$("again").onclick=round;
-$("next").onclick=()=>{if(busy)return;resetAll();idx=(idx+1)%WORDS.length;$("word").textContent=WORDS[idx];$("stars").innerHTML="";$("heard").textContent="";round()};
+$("next").onclick=()=>{if(busy)return;resetAll();clearClip();idx=(idx+1)%WORDS.length;$("word").textContent=WORDS[idx];$("stars").innerHTML="";$("heard").textContent="";round()};
+let player=null;
+$("hearRight").onclick=()=>{if(busy)return;speak(WORDS[idx])};
+$("hearMe").onclick=()=>{if(busy||!clipURL)return;try{speechSynthesis.cancel()}catch(e){}if(player){player.pause()}player=new Audio(clipURL);player.play().catch(e=>{$("heard").textContent+=" | playback failed: "+e.message})};
 </script></body></html>
