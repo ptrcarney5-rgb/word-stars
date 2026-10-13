@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Word Stars</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:"Comic Sans MS","Chalkboard SE",system-ui,sans-serif;background:linear-gradient(160deg,#ffd6e8,#c9f0ff 50%,#fff3b0);min-height:100vh;text-align:center;color:#333;overflow-x:hidden}
+h1{margin:12px 0 4px;font-size:2rem;color:#ff5e8a;text-shadow:2px 2px #fff}
+.row{display:flex;gap:8px;justify-content:center;margin:8px;flex-wrap:wrap}
+.tog button{border:3px solid #fff;border-radius:999px;padding:8px 14px;font-size:1rem;font-weight:bold;background:#e0e0ff;color:#555}
+.tog button.on{background:#7c5cff;color:#fff}
+#card{background:#fff;margin:14px auto;width:92%;max-width:480px;border-radius:30px;padding:24px 10px;box-shadow:0 8px 0 #7c5cff33}
+#word{font-size:5rem;font-weight:900;color:#ff8a00;letter-spacing:4px;margin:10px 0}
+#msg{font-size:1.4rem;min-height:2em}
+#mic{font-size:3.5rem;width:100px;height:100px;border-radius:50%;margin:10px auto;display:flex;align-items:center;justify-content:center;background:#eee}
+#mic.live{background:#ff5e8a;animation:pulse 0.8s infinite}
+@keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 #ff5e8a88}50%{transform:scale(1.12);box-shadow:0 0 0 20px #ff5e8a00}}
+#count{font-size:2rem;font-weight:bold;color:#ff5e8a;min-height:1.2em}
+#stars{font-size:3rem;min-height:1.3em}
+#stars span{display:inline-block;opacity:0;transform:scale(0)}
+#stars span.pop{animation:pop .5s forwards}
+@keyframes pop{60%{transform:scale(1.5) rotate(20deg);opacity:1}100%{transform:scale(1);opacity:1}}
+.big{font-size:1.4rem;font-weight:bold;border:none;border-radius:20px;padding:16px 22px;color:#fff;box-shadow:0 5px 0 #0003}
+.go{background:#22c55e}.again{background:#f59e0b}.next{background:#3b82f6}
+.big:active{transform:translateY(3px);box-shadow:0 2px 0 #0003}
+#heard{font-size:.8rem;color:#888;margin:8px;min-height:1em}
+#unsup{display:none;background:#fee;border:3px solid #f66;border-radius:16px;margin:10px;padding:12px;font-size:1.1rem}
+.conf{position:fixed;top:-20px;width:10px;height:16px;z-index:9;animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+</style></head><body>
+<h1>⭐ Word Stars ⭐</h1>
+<div class="row tog" id="modes"><button data-m="say" class="on">🗣️ Say It</button><button data-m="read">📖 Read It</button></div>
+<div class="row tog" id="levels"><button data-l="easy">Easy</button><button data-l="medium" class="on">Medium</button><button data-l="hard">Hard</button></div>
+<div id="unsup">😢 This browser can't listen for words. Please use <b>Chrome</b> (Android/desktop) or <b>Safari</b> on iPhone (iOS 14.5+). Firefox doesn't support it.</div>
+<div id="card">
+ <div id="word">cat</div>
+ <div id="msg">Tap Go when you're ready!</div>
+ <div id="mic">🎤</div><div id="count"></div>
+ <div id="stars"></div>
+ <div class="row"><button class="big go" id="go">▶️ Go!</button></div>
+ <div class="row"><button class="big again" id="again">🔁 Try again</button><button class="big next" id="next">➡️ Next word</button></div>
+ <div id="heard"></div>
+</div>
+<script>
+const WORDS="cat dog skunk fish jump sun hat bed pig frog duck cake ball tree star moon bus cup red big run sit hop milk bird book home blue green apple".split(" ");
+let idx=0,mode="say",level="medium",busy=false;
+const $=id=>document.getElementById(id);
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){$("unsup").style.display="block";}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}}
+shuffle(WORDS);$("word").textContent=WORDS[0];
+function tg(id,attr,cb){$(id).querySelectorAll("button").forEach(b=>b.onclick=()=>{$(id).querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");cb(b.dataset[attr])})}
+tg("modes","m",v=>mode=v);tg("levels","l",v=>level=v);
+function speak(t){return new Promise(r=>{if(!window.speechSynthesis)return r();speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=0.85;u.pitch=1.2;u.onend=r;u.onerror=r;speechSynthesis.speak(u);setTimeout(r,5000)})}
+function lev(a,b){const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]==b[j-1]?0:1));return d[a.length][b.length]}
+function soundex(s){s=s.toUpperCase().replace(/[^A-Z]/g,"");if(!s)return"";const c={B:1,F:1,P:1,V:1,C:2,G:2,J:2,K:2,Q:2,S:2,X:2,Z:2,D:3,T:3,L:4,M:5,N:5,R:6};let r=s[0],p=c[s[0]]||0;for(let i=1;i<s.length&&r.length<4;i++){const k=c[s[i]]||0;if(k&&k!=p)r+=k;if(s[i]!="H"&&s[i]!="W")p=k}return(r+"000").slice(0,4)}
+function sim(t,h){h=h.toLowerCase().replace(/[^a-z ]/g,"").trim();if(!h)return 0;
+ let best=0;for(const w of [h,...h.split(" ")]){if(w==t)return 1;
+  const e=1-lev(t,w)/Math.max(t.length,w.length);const st=soundex(t),sw=soundex(w);let ph=0;for(let i=0;i<4;i++)if(st[i]==sw[i])ph+=0.25;
+  best=Math.max(best,0.6*e+0.4*ph)}return best}
+const CUT={easy:[0.75,0.55,0.4,0.25],medium:[0.85,0.7,0.5,0.3],hard:[0.93,0.8,0.65,0.45]};
+function stars(s){if(s>=1)return 5;const c=CUT[level];for(let i=0;i<4;i++)if(s>=c[i])return 4-i;return 0}
+function listen(){return new Promise(res=>{const r=new SR();r.lang="en-US";r.interimResults=true;r.maxAlternatives=5;r.continuous=false;let alts=[],done=false;
+ r.onresult=e=>{for(const res of e.results)for(let i=0;i<res.length;i++)alts.push(res[i].transcript)};
+ const fin=()=>{if(done)return;done=true;try{r.stop()}catch(e){}clearInterval(iv);$("mic").classList.remove("live");$("count").textContent="";res(alts)};
+ r.onend=()=>setTimeout(fin,200);r.onerror=e=>{$("heard").textContent="mic error: "+e.error;fin()};
+ $("mic").classList.add("live");let n=3;$("count").textContent=n;const iv=setInterval(()=>{n--;$("count").textContent=n>0?n:"";if(n<=0)fin()},1000);
+ try{r.start()}catch(e){fin()}})}
+const PRAISE=["","Good try! Let's do it again!","Nice effort! You're getting there!","Good job!","Great job! So close!","WOW! You nailed it!"];
+async function round(){if(busy||!SR)return;busy=true;const w=WORDS[idx];$("stars").innerHTML="";$("heard").textContent="";
+ $("msg").textContent=mode=="say"?`Say the word "${w}"`:"Can you read this word?";
+ await speak(mode=="say"?`Say the word, ${w}`:"Can you read this word?");
+ $("msg").textContent="Listening... 👂";const alts=await listen();
+ let best=0,bestAlt="";for(const a of alts){const s=sim(w,a);if(s>best){best=s;bestAlt=a}}
+ const n=stars(best);$("heard").textContent="I heard: "+(alts.length?[...new Set(alts)].join(" | "):"(nothing)")+` — score ${(best*100|0)}%`;
+ $("stars").innerHTML=[1,2,3,4,5].map(i=>`<span>${i<=n?"⭐":"☆"}</span>`).join("");
+ $("stars").querySelectorAll("span").forEach((s,i)=>setTimeout(()=>s.classList.add("pop"),i*180));
+ const p=alts.length?(PRAISE[n]||"Hmm, that sounded like a different word. Try again!"):"I didn't hear anything. Try again!";
+ $("msg").textContent=p;if(n==5)confetti();await speak(p);busy=false}
+function confetti(){const col=["#ff5e8a","#ffd700","#22c55e","#3b82f6","#a855f7","#ff8a00"];for(let i=0;i<80;i++){const d=document.createElement("div");d.className="conf";d.style.left=Math.random()*100+"vw";d.style.background=col[i%6];d.style.animationDuration=(1.5+Math.random()*2)+"s";d.style.animationDelay=Math.random()*0.5+"s";document.body.appendChild(d);setTimeout(()=>d.remove(),4500)}}
+$("go").onclick=round;$("again").onclick=round;
+$("next").onclick=()=>{if(busy)return;idx=(idx+1)%WORDS.length;$("word").textContent=WORDS[idx];$("stars").innerHTML="";$("heard").textContent="";round()};
+</script></body></html>
